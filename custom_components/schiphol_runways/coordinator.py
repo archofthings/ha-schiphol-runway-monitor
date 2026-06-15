@@ -1,9 +1,17 @@
-"""DataUpdateCoordinator for Schiphol Runway Monitor."""
+"""
+DataUpdateCoordinator for Schiphol Runway Monitor.
+
+Data source: dutchplanespotters.nl/runways/ams/
+  - Fully server-rendered HTML (no JS execution needed)
+  - Sourced from LVNL, updated every 5 minutes
+  - Shows LANDING RWY / TAKEOFF RWY for the current moment at the top of the page
+  - Also contains a full time-slot table as a reliable fallback
+"""
 from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import aiohttp
@@ -13,8 +21,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    LVNL_EN_PAGE_URL,
-    LVNL_PAGE_URL,
     RUNWAYS,
     STATE_BOTH,
     STATE_INBOUND,
@@ -25,7 +31,10 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Request headers that mimic a browser (needed for LVNL site)
+# dutchplanespotters.nl renders full HTML server-side (no JS needed).
+# It sources its data from LVNL and shows LANDING RWY / TAKEOFF RWY for now.
+DATA_URL = "https://www.dutchplanespotters.nl/runways/ams/"
+
 _HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -33,13 +42,33 @@ _HEADERS = {
         "Chrome/124.0.0.0 Safari/537.36"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "nl-NL,nl;q=0.9,en;q=0.8",
-    "Cache-Control": "no-cache",
+    "Accept-Language": "en-US,en;q=0.9",
 }
+
+# Schiphol is in CET/CEST = UTC+1 / UTC+2
+_NL_UTC_OFFSET_SUMMER = 2   # CEST (late Mar – late Oct)
+_NL_UTC_OFFSET_WINTER = 1   # CET  (late Oct – late Mar)
+
+
+def _nl_now() -> datetime:
+    """Return current local time in the Netherlands (approximated)."""
+    now_utc = datetime.now(timezone.utc)
+    # Simple DST heuristic: month 4-10 = summer (+2), else winter (+1)
+    offset = _NL_UTC_OFFSET_SUMMER if 4 <= now_utc.month <= 10 else _NL_UTC_OFFSET_WINTER
+    return now_utc + timedelta(hours=offset)
+
+
+def _parse_runway_list(raw: str) -> list[str]:
+    """Split a runway string like '18R, 06' into ['18R', '06']."""
+    return [
+        r.strip().upper()
+        for r in re.split(r"[\s,]+", raw)
+        if re.match(r"^\d{2}[LRC]?$", r.strip())
+    ]
 
 
 class SchipholRunwayCoordinator(DataUpdateCoordinator[dict[str, Any]]):
-    """Coordinator that polls LVNL for active Schiphol runway data."""
+    """Coordinator that polls dutchplanespotters.nl for Schiphol runway data."""
 
     def __init__(self, hass: HomeAssistant, scan_interval: int) -> None:
         super().__init__(
@@ -50,200 +79,177 @@ class SchipholRunwayCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     # ─────────────────────────────────────────────────────────────────────────
-    # Public helpers
+    # Main update
     # ─────────────────────────────────────────────────────────────────────────
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from LVNL and return per-runway state dict."""
         try:
-            raw_html = await self._fetch_page()
+            html = await self._fetch()
         except Exception as exc:
-            raise UpdateFailed(f"Error fetching LVNL runway page: {exc}") from exc
+            raise UpdateFailed(f"Error fetching runway data: {exc}") from exc
 
-        active = self._parse_runways(raw_html)
-        _LOGGER.debug("LVNL parsed active runways: %s", active)
-
-        return self._build_runway_states(active)
+        active = self._parse(html)
+        _LOGGER.debug(
+            "Schiphol runways — landing: %s  takeoff: %s",
+            active["landing"],
+            active["takeoff"],
+        )
+        return _build_runway_states(active)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Network
     # ─────────────────────────────────────────────────────────────────────────
 
-    async def _fetch_page(self) -> str:
-        """Fetch the LVNL runway page. Tries NL then EN version."""
+    async def _fetch(self) -> str:
         timeout = aiohttp.ClientTimeout(total=15)
         async with aiohttp.ClientSession(headers=_HEADERS, timeout=timeout) as session:
-            for url in (LVNL_PAGE_URL, LVNL_EN_PAGE_URL):
-                try:
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            text = await resp.text(encoding="utf-8", errors="replace")
-                            _LOGGER.debug("Fetched LVNL page from %s (%d chars)", url, len(text))
-                            return text
-                        _LOGGER.warning("LVNL returned HTTP %s for %s", resp.status, url)
-                except aiohttp.ClientError as exc:
-                    _LOGGER.warning("Request failed for %s: %s", url, exc)
-
-        raise UpdateFailed("Could not reach LVNL runway page on any URL")
+            async with session.get(DATA_URL) as resp:
+                if resp.status != 200:
+                    raise UpdateFailed(
+                        f"dutchplanespotters.nl returned HTTP {resp.status}"
+                    )
+                return await resp.text(encoding="utf-8", errors="replace")
 
     # ─────────────────────────────────────────────────────────────────────────
     # Parsing
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _parse_runways(self, html: str) -> dict[str, list[str]]:
+    def _parse(self, html: str) -> dict[str, list[str]]:
         """
-        Parse LVNL HTML and return {"landing": [...], "takeoff": [...]} of
-        active runway headings (e.g. ["18L", "36R"]).
+        Parse current landing/takeoff runways from the page.
 
-        LVNL encodes the runway widget data as JSON embedded in the page
-        (inside a <script type="application/json"> or window.__INITIAL_STATE__
-        variable) or as individual class-marked elements.
+        Strategy 1 (primary): the page shows prominently at the top:
+            LANDING RWY: 18R
+            TAKEOFF RWY: 24
+        These are the *current* active runways — exactly what we need.
 
-        We try several patterns in priority order so the integration is
-        resilient to minor site updates.
+        Strategy 2 (fallback): walk the time-slot table and find the slot
+        that matches the current Netherlands local time.
         """
-        landing: set[str] = set()
-        takeoff: set[str] = set()
+        landing: list[str] = []
+        takeoff: list[str] = []
 
-        # ── Pattern 1: JSON object with "landing" / "takeoff" / "arrivals" / "departures" keys ──
-        json_blocks = re.findall(
-            r'\{[^{}]{0,2000}(?:landing|arrival|aankomst|takeoff|departure|vertrek)[^{}]{0,2000}\}',
+        # ── Strategy 1: top-of-page current runway banners ────────────────
+        landing_match = re.search(
+            r"LANDING\s+RWY\s*:\s*([\d,\s]+(?:[LRC](?:\s*,\s*)?)?)",
             html,
+            re.IGNORECASE,
+        )
+        takeoff_match = re.search(
+            r"TAKEOFF\s+RWY\s*:\s*([\d,\s]+(?:[LRC](?:\s*,\s*)?)?)",
+            html,
+            re.IGNORECASE,
+        )
+
+        if landing_match:
+            landing = _parse_runway_list(landing_match.group(1))
+        if takeoff_match:
+            takeoff = _parse_runway_list(takeoff_match.group(1))
+
+        if landing or takeoff:
+            _LOGGER.debug("Parsed via strategy 1 (banner): landing=%s takeoff=%s", landing, takeoff)
+            return {"landing": landing, "takeoff": takeoff}
+
+        # ── Strategy 2: time-slot table lookup ───────────────────────────
+        _LOGGER.debug("Banner pattern not found — falling back to time-slot table")
+        landing, takeoff = self._parse_timeslot_table(html)
+
+        if landing or takeoff:
+            _LOGGER.debug("Parsed via strategy 2 (time-slot): landing=%s takeoff=%s", landing, takeoff)
+            return {"landing": landing, "takeoff": takeoff}
+
+        _LOGGER.warning(
+            "Could not parse any runway data from dutchplanespotters.nl. "
+            "The site layout may have changed."
+        )
+        return {"landing": [], "takeoff": []}
+
+    def _parse_timeslot_table(self, html: str) -> tuple[list[str], list[str]]:
+        """
+        Walk the time-slot table and return the runways active right now.
+
+        Table rows look like:
+            From - Until  14:30 - 15:15 | Landing  18R, 06 | Takeoff  09
+        """
+        now = _nl_now()
+        current_minutes = now.hour * 60 + now.minute
+
+        # Strip HTML tags for easier regex
+        text = re.sub(r"<[^>]+>", " ", html)
+        text = re.sub(r"\s+", " ", text)
+
+        pattern = re.compile(
+            r"(\d{2}):(\d{2})\s*-\s*(\d{2}):(\d{2})"   # time range
+            r".*?Landing\s+([\w,\s]+?)"                   # landing runways
+            r"\s+Takeoff\s+([\w,\s]+?)"                   # takeoff runways
+            r"(?=\d{2}:\d{2}|$)",                         # lookahead: next slot or end
             re.IGNORECASE | re.DOTALL,
         )
-        for block in json_blocks:
-            # landing/arrivals list
-            for m in re.finditer(
-                r'(?:landing|arrival|aankomst)[s]?\s*["\']?\s*[:\]]\s*["\']?([0-9]{2}[LRC]?)',
-                block,
-                re.IGNORECASE,
-            ):
-                landing.add(m.group(1).upper())
-            # takeoff/departures list
-            for m in re.finditer(
-                r'(?:takeoff|departure|vertrek)[s]?\s*["\']?\s*[:\]]\s*["\']?([0-9]{2}[LRC]?)',
-                block,
-                re.IGNORECASE,
-            ):
-                takeoff.add(m.group(1).upper())
 
-        # ── Pattern 2: LVNL widget JSON — "runway":"18L","type":"L" (L=landing, D=departure) ──
-        for m in re.finditer(
-            r'"runway"\s*:\s*"([0-9]{2}[LRC]?)"\s*,\s*[^}]*"type"\s*:\s*"([LD])"',
-            html,
-            re.IGNORECASE,
-        ):
-            rwy, rtype = m.group(1).upper(), m.group(2).upper()
-            (landing if rtype == "L" else takeoff).add(rwy)
+        best_landing: list[str] = []
+        best_takeoff: list[str] = []
 
-        # Also try reversed key order: "type":"L","runway":"18L"
-        for m in re.finditer(
-            r'"type"\s*:\s*"([LD])"\s*,\s*[^}]*"runway"\s*:\s*"([0-9]{2}[LRC]?)"',
-            html,
-            re.IGNORECASE,
-        ):
-            rtype, rwy = m.group(1).upper(), m.group(2).upper()
-            (landing if rtype == "L" else takeoff).add(rwy)
+        for m in pattern.finditer(text):
+            sh, sm, eh, em = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+            start_min = sh * 60 + sm
+            end_min = eh * 60 + em
 
-        # ── Pattern 3: CSS-class based markup ─────────────────────────────
-        # <div class="landing active">18L</div> or <span class="runway landing">06</span>
-        for m in re.finditer(
-            r'class="[^"]*(?:landing|arrival)[^"]*active[^"]*"[^>]*>([0-9]{2}[LRC]?)<',
-            html,
-            re.IGNORECASE,
-        ):
-            landing.add(m.group(1).upper())
+            # Handle overnight slots (e.g. 22:10 - 01:55)
+            if end_min < start_min:
+                in_slot = current_minutes >= start_min or current_minutes <= end_min
+            else:
+                in_slot = start_min <= current_minutes <= end_min
 
-        for m in re.finditer(
-            r'class="[^"]*active[^"]*(?:landing|arrival)[^"]*"[^>]*>([0-9]{2}[LRC]?)<',
-            html,
-            re.IGNORECASE,
-        ):
-            landing.add(m.group(1).upper())
+            if in_slot:
+                best_landing = _parse_runway_list(m.group(5))
+                best_takeoff = _parse_runway_list(m.group(6))
+                break  # first matching slot wins
 
-        for m in re.finditer(
-            r'class="[^"]*(?:takeoff|departure|vertrek)[^"]*active[^"]*"[^>]*>([0-9]{2}[LRC]?)<',
-            html,
-            re.IGNORECASE,
-        ):
-            takeoff.add(m.group(1).upper())
+        return best_landing, best_takeoff
 
-        for m in re.finditer(
-            r'class="[^"]*active[^"]*(?:takeoff|departure|vertrek)[^"]*"[^>]*>([0-9]{2}[LRC]?)<',
-            html,
-            re.IGNORECASE,
-        ):
-            takeoff.add(m.group(1).upper())
 
-        # ── Pattern 4: Fallback — any runway code near "actief" / "active" ─
-        if not landing and not takeoff:
-            _LOGGER.warning(
-                "Primary runway parsing yielded no results — falling back to generic pattern"
-            )
-            # Look for runway codes (2-digit + optional LRC) near context words
-            context_block = re.sub(r'<[^>]+>', ' ', html)  # strip tags
-            for m in re.finditer(
-                r'(?:actief|active|gebruik|in.use)\W{0,40}?([0-9]{2}[LRC]?)',
-                context_block,
-                re.IGNORECASE,
-            ):
-                code = m.group(1).upper()
-                if re.match(r'^(?:06|09|18[LRC]?|27|22|24|36[LRC]?|04)$', code):
-                    # Can't determine direction, put in both so sensor shows "in use"
-                    landing.add(code)
+# ─────────────────────────────────────────────────────────────────────────────
+# State builder (pure function, easy to test)
+# ─────────────────────────────────────────────────────────────────────────────
 
-        _LOGGER.debug("Parsed landing=%s  takeoff=%s", landing, takeoff)
-        return {"landing": list(landing), "takeoff": list(takeoff)}
+def _build_runway_states(active: dict[str, list[str]]) -> dict[str, Any]:
+    """
+    Map raw landing/takeoff runway lists onto the RUNWAYS config table
+    and return a dict keyed by runway designator (e.g. "18L/36R").
+    """
+    landing_set = {h.upper() for h in active.get("landing", [])}
+    takeoff_set = {h.upper() for h in active.get("takeoff", [])}
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # State building
-    # ─────────────────────────────────────────────────────────────────────────
+    result: dict[str, Any] = {
+        "_raw_landing": list(landing_set),
+        "_raw_takeoff": list(takeoff_set),
+    }
 
-    @staticmethod
-    def _build_runway_states(active: dict[str, list[str]]) -> dict[str, Any]:
-        """
-        Combine parsed landing/takeoff lists with the runway config table
-        and return a dict keyed by runway designator (e.g. "06/24").
+    for designator, meta in RUNWAYS.items():
+        is_landing = any(h in landing_set for h in meta["inbound_headings"])
+        is_takeoff = any(h in takeoff_set for h in meta["outbound_headings"])
 
-        Each value is a dict:
-          state: not_in_use | inbound | outbound | inbound_and_outbound
-          landing_heading: "06" | None
-          takeoff_heading: "36" | None
-          name: "Kaagbaan"
-        """
-        landing_set = {h.upper() for h in active.get("landing", [])}
-        takeoff_set = {h.upper() for h in active.get("takeoff", [])}
+        active_landing = next(
+            (h for h in meta["inbound_headings"] if h in landing_set), None
+        )
+        active_takeoff = next(
+            (h for h in meta["outbound_headings"] if h in takeoff_set), None
+        )
 
-        result: dict[str, Any] = {
-            "_raw_landing": list(landing_set),
-            "_raw_takeoff": list(takeoff_set),
+        if is_landing and is_takeoff:
+            state = STATE_BOTH
+        elif is_landing:
+            state = STATE_INBOUND
+        elif is_takeoff:
+            state = STATE_OUTBOUND
+        else:
+            state = STATE_NOT_IN_USE
+
+        result[designator] = {
+            "state": state,
+            "name": meta["name"],
+            "landing_heading": active_landing,
+            "takeoff_heading": active_takeoff,
         }
 
-        for designator, meta in RUNWAYS.items():
-            is_landing = any(h in landing_set for h in meta["inbound_headings"])
-            is_takeoff = any(h in takeoff_set for h in meta["outbound_headings"])
-
-            active_landing = next(
-                (h for h in meta["inbound_headings"] if h in landing_set), None
-            )
-            active_takeoff = next(
-                (h for h in meta["outbound_headings"] if h in takeoff_set), None
-            )
-
-            if is_landing and is_takeoff:
-                state = STATE_BOTH
-            elif is_landing:
-                state = STATE_INBOUND
-            elif is_takeoff:
-                state = STATE_OUTBOUND
-            else:
-                state = STATE_NOT_IN_USE
-
-            result[designator] = {
-                "state": state,
-                "name": meta["name"],
-                "landing_heading": active_landing,
-                "takeoff_heading": active_takeoff,
-            }
-
-        return result
+    return result
