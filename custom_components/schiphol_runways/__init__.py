@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
@@ -13,17 +12,7 @@ from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 from .coordinator import SchipholRunwayCoordinator
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS: list[Platform] = [Platform.SENSOR]
-
-
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register the static icon path once at setup time."""
-    hass.http.register_static_path(
-        f"/local/{DOMAIN}",
-        str(Path(__file__).parent / "www"),
-        cache_headers=True,
-    )
-    return True
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BINARY_SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
