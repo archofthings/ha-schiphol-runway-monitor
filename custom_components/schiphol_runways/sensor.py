@@ -20,7 +20,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     DOMAIN,
     RUNWAYS,
-    STATE_BOTH,
     STATE_INBOUND,
     STATE_NOT_IN_USE,
     STATE_OUTBOUND,
@@ -37,7 +36,6 @@ _RUNWAY_ICONS = {
     STATE_NOT_IN_USE: "mdi:airplane-off",
     STATE_INBOUND:    "mdi:airplane-landing",
     STATE_OUTBOUND:   "mdi:airplane-takeoff",
-    STATE_BOTH:       "mdi:airplane",
 }
 
 _PEAK_ICONS = {

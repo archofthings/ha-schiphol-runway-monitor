@@ -35,7 +35,6 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     RUNWAYS,
-    STATE_BOTH,
     STATE_INBOUND,
     STATE_NOT_IN_USE,
     STATE_OUTBOUND,
@@ -243,9 +242,7 @@ def _build_runway_states(active: dict[str, list[str]]) -> dict[str, Any]:
         landing_heading = next((h for h in headings if h in landing_set), None)
         takeoff_heading = next((h for h in headings if h in takeoff_set), None)
 
-        if landing_heading and takeoff_heading:
-            state = STATE_BOTH
-        elif landing_heading:
+        if landing_heading:
             state = STATE_INBOUND
         elif takeoff_heading:
             state = STATE_OUTBOUND
@@ -255,8 +252,8 @@ def _build_runway_states(active: dict[str, list[str]]) -> dict[str, Any]:
         result[designator] = {
             "state": state,
             "name": meta["name"],
-            "landing_heading": landing_heading,
-            "takeoff_heading": takeoff_heading,
+            "landing_heading": landing_heading if state == STATE_INBOUND else None,
+            "takeoff_heading": takeoff_heading if state == STATE_OUTBOUND else None,
         }
 
     return result

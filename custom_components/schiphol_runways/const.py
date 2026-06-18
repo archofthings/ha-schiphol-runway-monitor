@@ -7,7 +7,6 @@ DEFAULT_SCAN_INTERVAL = 5  # minutes
 STATE_NOT_IN_USE = "not_in_use"
 STATE_INBOUND    = "inbound"
 STATE_OUTBOUND   = "outbound"
-STATE_BOTH       = "inbound_and_outbound"
 
 # Combined peak sensor state (kept for the combined sensor)
 STATE_PEAK_INBOUND  = "inbound_peak"
