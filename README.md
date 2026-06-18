@@ -253,7 +253,7 @@ Quiet periods: 1 landing + 1 departure runway. Inbound peaks: 2 landing + 1 depa
 
 ## Companion Dashboard Card
 
-For a live visual runway map with airplane sprites and peak indicators, install the separate **[Schiphol Runway Card](https://github.com/your-repo/schiphol-runway-card)** via **HACS → Frontend**. (HACS requires integrations and frontend cards to live in separate repositories, so they're distributed separately.)
+For a live visual runway map with airplane sprites and peak indicators, install the separate **[Schiphol Runway Card](https://github.com/archofthings/ha-schiphol-runway-card)** via **HACS → Frontend**. (HACS requires integrations and frontend cards to live in separate repositories, so they're distributed separately.)
 
 ---
 
@@ -288,7 +288,7 @@ Data sourced from [dutchplanespotters.nl](https://www.dutchplanespotters.nl/), w
 
 [hacs-badge]: https://img.shields.io/badge/HACS-Custom-41BDF5.svg
 [hacs-url]: https://hacs.xyz
-[release-badge]: https://img.shields.io/github/v/release/your-repo/schiphol-runways-ha
-[release-url]: https://github.com/your-repo/schiphol-runways-ha/releases
+[release-badge]: https://img.shields.io/github/v/release/archofthings/ha-schiphol-runway-monitor
+[release-url]: https://github.com/archofthings/ha-schiphol-runway-monitor/releases
 [license-badge]: https://img.shields.io/badge/License-MIT-yellow.svg
-[license-url]: https://github.com/your-repo/schiphol-runways-ha/blob/main/LICENSE
+[license-url]: https://github.com/archofthings/ha-schiphol-runway-monitor/LICENSE
