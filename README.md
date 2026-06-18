@@ -6,7 +6,7 @@
 
 A Home Assistant custom integration that monitors **live runway usage at Amsterdam Airport Schiphol (EHAM)**. It creates one sensor per runway, a combined peak-time sensor, and two boolean sensors for inbound/outbound peaks — all updated every 5 minutes from LVNL (Luchtverkeersleiding Nederland) data.
 
-> 💡 Want a visual runway map on your dashboard? Pair this with the companion **[Schiphol Runway Card](https://github.com/your-repo/schiphol-runway-card)** (installed separately via HACS Frontend).
+> 💡 Want a visual runway map on your dashboard? Pair this with the companion **[Schiphol Runway Card](https://github.com/archofthings/ha-schiphol-runway-card)** (installed separately via HACS Frontend).
 
 ---
 
@@ -24,8 +24,6 @@ A Home Assistant custom integration that monitors **live runway usage at Amsterd
 ## Data Source
 
 Data is sourced from **[dutchplanespotters.nl](https://www.dutchplanespotters.nl/runways/ams/)**, which aggregates real-time runway usage from LVNL (the Dutch air traffic control authority). LVNL updates runway assignments roughly every 5 minutes.
-
-The integration queries the JSON endpoint `https://www.dutchplanespotters.nl/api/runways/ams`, finds the time slot matching the current moment, and reports which runways are landing (`landingRunways`) and departing (`departingRunways`).
 
 > ⚠️ **Note:** The data reflects *actual current* runway usage. There is no publicly available source for *future* runway assignments — runway selection depends on real-time wind and traffic conditions.
 
@@ -55,7 +53,6 @@ One sensor per runway:
 | `not_in_use` | Runway is not active |
 | `inbound` | Runway is being used for landings |
 | `outbound` | Runway is being used for takeoffs |
-| `inbound_and_outbound` | Runway is used for both simultaneously |
 
 #### Attributes
 
@@ -138,7 +135,7 @@ Simple booleans, ideal for automations:
 
 ### Manual Installation
 
-1. Download the [latest release][release-url]
+1. Download the latest release
 2. Copy the `custom_components/schiphol_runways/` folder into your config:
    ```
    /config/custom_components/schiphol_runways/
