@@ -10,7 +10,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
 from .coordinator import SchipholRunwayCoordinator
 from .sensor import SchipholInboundPeakBinarySensor, SchipholOutboundPeakBinarySensor
 
@@ -20,7 +19,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: SchipholRunwayCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: SchipholRunwayCoordinator = entry.runtime_data
     async_add_entities([
         SchipholInboundPeakBinarySensor(coordinator),
         SchipholOutboundPeakBinarySensor(coordinator),

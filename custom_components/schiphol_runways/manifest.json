@@ -1,12 +1,14 @@
 {
   "domain": "schiphol_runways",
   "name": "Schiphol Runway Monitor",
-  "version": "1.6.1",
-  "documentation": "https://github.com/archofthings/ha-schiphol-runway-monitor",
-  "issue_tracker": "https://github.com/archofthings/ha-schiphol-runway-monitor/issues",
+  "codeowners": [
+    "@archofthings"
+  ],
+  "config_flow": true,
   "dependencies": [],
-  "codeowners": [],
-  "requirements": [],
+  "documentation": "https://github.com/archofthings/ha-schiphol-runway-monitor",
   "iot_class": "cloud_polling",
-  "config_flow": true
+  "issue_tracker": "https://github.com/archofthings/ha-schiphol-runway-monitor/issues",
+  "requirements": [],
+  "version": "1.8.0"
 }

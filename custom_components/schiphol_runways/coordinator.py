@@ -24,8 +24,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import aiohttp
 from homeassistant.core import HomeAssistant
@@ -36,6 +37,7 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     RUNWAYS,
+    STATE_BOTH,
     STATE_INBOUND,
     STATE_NOT_IN_USE,
     STATE_OUTBOUND,
@@ -49,8 +51,11 @@ _LOGGER = logging.getLogger(__name__)
 
 API_URL = "https://www.dutchplanespotters.nl/api/runways/ams"
 
+# Schiphol schedules and peak windows are published in Dutch local time.
+AMS_TZ = ZoneInfo("Europe/Amsterdam")
+
 _HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant-SchipholRunwayMonitor/1.6.1)",
+    "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant-SchipholRunwayMonitor/1.8)",
     "Accept": "application/json",
 }
 
@@ -68,7 +73,9 @@ class SchipholRunwayCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _async_update_data(self) -> dict[str, Any]:
         now = datetime.now(timezone.utc)
-        date_str = now.strftime("%Y-%m-%d")
+        # The API is keyed by the Dutch calendar day, not the UTC one.
+        local_day = now.astimezone(AMS_TZ).date()
+        date_str = local_day.isoformat()
 
         try:
             data = await self._fetch(date_str)
@@ -78,7 +85,7 @@ class SchipholRunwayCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             raise UpdateFailed(f"Error fetching runway data: {_describe(exc)}") from exc
 
         active  = _find_active_slot(data, now)
-        peaks   = _parse_peak_times(data, now, date_str)
+        peaks   = _parse_peak_times(data, now, local_day)
 
         _LOGGER.debug(
             "Active slot — landing: %s  departing: %s | peaks: %s",
@@ -88,6 +95,7 @@ class SchipholRunwayCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         result = _build_runway_states(active)
         result["_peaks"] = peaks
         result["_raw_peak_times"] = data.get("peakTimes", [])
+        result["_last_fetched"] = now.isoformat()
         return result
 
     async def _fetch(self, date_str: str) -> dict:
@@ -163,23 +171,17 @@ def _find_active_slot(data: dict, now: datetime) -> dict[str, list[str]]:
     return {"landing": [], "takeoff": []}
 
 
-def _parse_peak_hhmm(time_str: str, date_str: str) -> datetime | None:
-    """Parse 'HH:MM' into a timezone-aware UTC datetime on the given date.
-
-    Schiphol times are local NL time (CET/CEST).
-    We use a simple heuristic: months 4-10 = CEST (UTC+2), else CET (UTC+1).
-    """
+def _parse_peak_hhmm(time_str: str, day: date) -> datetime | None:
+    """Parse 'HH:MM' (Dutch local time) into an aware datetime on the given day."""
     if not time_str.strip():
         return None
     try:
-        month = int(date_str[5:7])
-        offset = "+02:00" if 4 <= month <= 10 else "+01:00"
-        return datetime.fromisoformat(f"{date_str}T{time_str.strip()}:00{offset}")
+        return datetime.combine(day, time.fromisoformat(time_str.strip()), tzinfo=AMS_TZ)
     except ValueError:
         return None
 
 
-def _parse_peak_times(data: dict, now: datetime, date_str: str) -> dict[str, Any]:
+def _parse_peak_times(data: dict, now: datetime, day: date) -> dict[str, Any]:
     """
     Parse peakTimes from the API response and return:
       {
@@ -205,10 +207,13 @@ def _parse_peak_times(data: dict, now: datetime, date_str: str) -> dict[str, Any
             parts = val.split(" - ")
             if len(parts) != 2:
                 continue
-            start_dt = _parse_peak_hhmm(parts[0], date_str)
-            end_dt   = _parse_peak_hhmm(parts[1], date_str)
+            start_dt = _parse_peak_hhmm(parts[0], day)
+            end_dt   = _parse_peak_hhmm(parts[1], day)
             if start_dt is None or end_dt is None:
                 continue
+            if end_dt <= start_dt:
+                # window crosses midnight, e.g. "23:00 - 01:00"
+                end_dt += timedelta(days=1)
 
             currently_in = start_dt <= now <= end_dt
             is_future    = start_dt > now
@@ -258,7 +263,9 @@ def _build_runway_states(active: dict[str, list[str]]) -> dict[str, Any]:
         landing_heading = next((h for h in headings if h in landing_set), None)
         takeoff_heading = next((h for h in headings if h in takeoff_set), None)
 
-        if landing_heading:
+        if landing_heading and takeoff_heading:
+            state = STATE_BOTH
+        elif landing_heading:
             state = STATE_INBOUND
         elif takeoff_heading:
             state = STATE_OUTBOUND
@@ -268,8 +275,8 @@ def _build_runway_states(active: dict[str, list[str]]) -> dict[str, Any]:
         result[designator] = {
             "state": state,
             "name": meta["name"],
-            "landing_heading": landing_heading if state == STATE_INBOUND else None,
-            "takeoff_heading": takeoff_heading if state == STATE_OUTBOUND else None,
+            "landing_heading": landing_heading,
+            "takeoff_heading": takeoff_heading,
         }
 
     return result

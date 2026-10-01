@@ -1,4 +1,5 @@
 {
   "name": "Schiphol Runway Monitor",
-  "country": "NL"
+  "country": "NL",
+  "homeassistant": "2024.4.0"
 }
