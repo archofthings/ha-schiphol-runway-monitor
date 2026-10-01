@@ -55,6 +55,7 @@ One sensor per runway:
 | `not_in_use` | Runway is not active |
 | `inbound` | Runway is being used for landings |
 | `outbound` | Runway is being used for takeoffs |
+| `inbound_and_outbound` | Runway is being used for landings and takeoffs at the same time |
 
 #### Attributes
 
@@ -92,9 +93,10 @@ One sensor per runway:
 | `next_inbound_peak` | string \| null | Next inbound window, e.g. `"15:20 - 16:50"` |
 | `next_outbound_peak` | string \| null | Next outbound window, e.g. `"14:00 - 15:40"` |
 | `all_peaks` | list | Full list of the day's peak windows, e.g. `[{"inbound": "07:10 - 09:50", "outbound": "06:50 - 08:00"}, ...]` |
+| `last_fetched` | string | ISO timestamp of the last successful data fetch |
 | `data_source` | string | Attribution string |
 
-> ℹ️ Peak windows are derived from LVNL observations over the past ~14 days and represent *typical* patterns. Actual peaks may shift slightly.
+> ℹ️ Peak windows are in Dutch local time (CET/CEST). They are derived from LVNL observations over the past ~14 days and represent *typical* patterns. Actual peaks may shift slightly.
 
 ---
 

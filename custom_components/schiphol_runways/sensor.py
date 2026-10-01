@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.binary_sensor import BinarySensorEntity, BinarySensorDeviceClass
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import (
     DOMAIN,
     RUNWAYS,
+    STATE_BOTH,
     STATE_INBOUND,
     STATE_NOT_IN_USE,
     STATE_OUTBOUND,
@@ -36,6 +37,7 @@ _RUNWAY_ICONS = {
     STATE_NOT_IN_USE: "mdi:airplane-off",
     STATE_INBOUND:    "mdi:airplane-landing",
     STATE_OUTBOUND:   "mdi:airplane-takeoff",
+    STATE_BOTH:       "mdi:airplane",
 }
 
 _PEAK_ICONS = {
@@ -64,7 +66,7 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    coordinator: SchipholRunwayCoordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator: SchipholRunwayCoordinator = entry.runtime_data
 
     entities: list = [
         SchipholRunwaySensor(coordinator, designator, meta)
@@ -156,6 +158,7 @@ class SchipholPeakTimeSensor(CoordinatorEntity[SchipholRunwayCoordinator], Senso
       next_inbound_peak   — next inbound peak window "HH:MM - HH:MM" or null
       next_outbound_peak  — next outbound peak window "HH:MM - HH:MM" or null
       all_peaks           — full list of peak windows from the API
+      last_fetched        — ISO timestamp of the last successful data fetch
       data_source         — attribution string
     """
 
@@ -190,6 +193,7 @@ class SchipholPeakTimeSensor(CoordinatorEntity[SchipholRunwayCoordinator], Senso
             "next_inbound_peak":  peaks.get("next_inbound_peak"),
             "next_outbound_peak": peaks.get("next_outbound_peak"),
             "all_peaks":          peaks.get("all_peaks", []),
+            "last_fetched":       (self.coordinator.data or {}).get("_last_fetched"),
             "data_source":        "LVNL via dutchplanespotters.nl",
         }
 
@@ -217,7 +221,6 @@ class SchipholInboundPeakBinarySensor(
     """
 
     _attr_has_entity_name = True
-    _attr_device_class    = BinarySensorDeviceClass.RUNNING
 
     def __init__(self, coordinator: SchipholRunwayCoordinator) -> None:
         super().__init__(coordinator)
@@ -274,7 +277,6 @@ class SchipholOutboundPeakBinarySensor(
     """
 
     _attr_has_entity_name = True
-    _attr_device_class    = BinarySensorDeviceClass.RUNNING
 
     def __init__(self, coordinator: SchipholRunwayCoordinator) -> None:
         super().__init__(coordinator)
