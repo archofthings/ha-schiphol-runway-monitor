@@ -46,7 +46,7 @@ One sensor per runway:
 | `sensor.schiphol_airport_eham_18r_36l_polderbaan` | 18R/36L | Polderbaan |
 | `sensor.schiphol_airport_eham_04_22_oostbaan` | 04/22 | Oostbaan |
 
-> **Upgrading from v1.6.x or earlier:** older versions had the names of 09/27 and 04/22 swapped. After updating, the friendly names are corrected, but Home Assistant keeps your existing entity IDs (`..._09_27_oostbaan` is still runway 09/27, `..._04_22_buitenveldertbaan` is still 04/22), so automations keep working. To get matching IDs, rename them under **Settings → Entities**.
+> **Upgrading from v1.6 or earlier:** older versions had the names of 09/27 and 04/22 swapped. After updating, the friendly names are corrected, but Home Assistant keeps your existing entity IDs (`..._09_27_oostbaan` is still runway 09/27, `..._04_22_buitenveldertbaan` is still 04/22), so automations keep working. To get matching IDs, rename them under **Settings → Entities**.
 
 #### States
 

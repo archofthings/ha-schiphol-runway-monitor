@@ -50,7 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://www.dutchplanespotters.nl/api/runways/ams"
 
 _HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant-SchipholRunwayMonitor/1.7)",
+    "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant-SchipholRunwayMonitor/1.6.1)",
     "Accept": "application/json",
 }
 
