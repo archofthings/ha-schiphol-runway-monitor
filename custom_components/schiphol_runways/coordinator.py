@@ -211,11 +211,12 @@ def _parse_peak_times(data: dict, now: datetime, day: date) -> dict[str, Any]:
             end_dt   = _parse_peak_hhmm(parts[1], day)
             if start_dt is None or end_dt is None:
                 continue
-            if end_dt <= start_dt:
-                # window crosses midnight, e.g. "23:00 - 01:00"
-                end_dt += timedelta(days=1)
-
             currently_in = start_dt <= now <= end_dt
+            if end_dt <= start_dt:
+                # Window crosses midnight, e.g. "23:00 - 01:00": it is active
+                # from start until midnight, and from midnight until end
+                # (the part that started the evening before).
+                currently_in = now >= start_dt or now <= end_dt
             is_future    = start_dt > now
 
             if direction == "inbound":
