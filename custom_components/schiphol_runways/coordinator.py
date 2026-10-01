@@ -29,6 +29,7 @@ from typing import Any
 
 import aiohttp
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
@@ -49,7 +50,7 @@ _LOGGER = logging.getLogger(__name__)
 API_URL = "https://www.dutchplanespotters.nl/api/runways/ams"
 
 _HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant-SchipholRunwayMonitor/1.3)",
+    "User-Agent": "Mozilla/5.0 (compatible; HomeAssistant-SchipholRunwayMonitor/1.7)",
     "Accept": "application/json",
 }
 
@@ -71,8 +72,10 @@ class SchipholRunwayCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         try:
             data = await self._fetch(date_str)
+        except UpdateFailed:
+            raise
         except Exception as exc:
-            raise UpdateFailed(f"Error fetching runway data: {exc}") from exc
+            raise UpdateFailed(f"Error fetching runway data: {_describe(exc)}") from exc
 
         active  = _find_active_slot(data, now)
         peaks   = _parse_peak_times(data, now, date_str)
@@ -89,30 +92,43 @@ class SchipholRunwayCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _fetch(self, date_str: str) -> dict:
         url = f"{API_URL}?date={date_str}"
-        timeout = aiohttp.ClientTimeout(total=20)
+        timeout = aiohttp.ClientTimeout(total=30)
+        session = async_get_clientsession(self.hass)
         last_exc: Exception | None = None
         for attempt in range(3):
             if attempt:
-                await asyncio.sleep(3 * attempt)
+                await asyncio.sleep(5 * attempt)
             try:
-                async with aiohttp.ClientSession(headers=_HEADERS, timeout=timeout) as session:
-                    async with session.get(url) as resp:
-                        if resp.status == 200:
-                            return await resp.json(content_type=None)
-                        # permanent client error — no point retrying
-                        if resp.status < 500 and resp.status != 429:
-                            raise UpdateFailed(f"API returned HTTP {resp.status} for {url}")
-                        last_exc = Exception(f"HTTP {resp.status}")
-                        _LOGGER.warning("Schiphol API HTTP %s (attempt %d/3)", resp.status, attempt + 1)
+                async with session.get(url, headers=_HEADERS, timeout=timeout) as resp:
+                    if resp.status == 200:
+                        return await resp.json(content_type=None)
+                    # permanent client error — no point retrying
+                    if resp.status < 500 and resp.status != 429:
+                        raise UpdateFailed(f"API returned HTTP {resp.status} for {url}")
+                    last_exc = Exception(f"HTTP {resp.status}")
             except UpdateFailed:
                 raise
             except Exception as exc:
                 last_exc = exc
-                _LOGGER.warning("Schiphol fetch attempt %d/3 failed: %s", attempt + 1, exc)
-        raise UpdateFailed(f"All 3 fetch attempts failed; last error: {last_exc}") from last_exc
+            # Per-attempt failures are expected occasionally; the coordinator
+            # logs the final outcome (and the recovery) once, so keep these quiet.
+            _LOGGER.debug("Schiphol fetch attempt %d/3 failed: %s", attempt + 1, _describe(last_exc))
+        raise UpdateFailed(
+            f"All 3 fetch attempts failed; last error: {_describe(last_exc)}"
+        ) from last_exc
 
 
 # ── Pure helpers ──────────────────────────────────────────────────────────────
+
+def _describe(exc: BaseException | None) -> str:
+    """Readable error text; some exceptions (e.g. timeouts) have an empty str()."""
+    if exc is None:
+        return "unknown error"
+    if isinstance(exc, (asyncio.TimeoutError, TimeoutError)):
+        return "request timed out (dutchplanespotters.nl did not respond)"
+    msg = str(exc)
+    return f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__
+
 
 def _find_active_slot(data: dict, now: datetime) -> dict[str, list[str]]:
     """Return landing/departing headings for the time slot containing now."""
