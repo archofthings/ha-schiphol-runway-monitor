@@ -40,11 +40,13 @@ One sensor per runway:
 | Entity ID | Runway | Name |
 |-----------|--------|------|
 | `sensor.schiphol_airport_eham_06_24_kaagbaan` | 06/24 | Kaagbaan |
-| `sensor.schiphol_airport_eham_09_27_oostbaan` | 09/27 | Oostbaan |
+| `sensor.schiphol_airport_eham_09_27_buitenveldertbaan` | 09/27 | Buitenveldertbaan |
 | `sensor.schiphol_airport_eham_18c_36c_zwanenburgbaan` | 18C/36C | Zwanenburgbaan |
 | `sensor.schiphol_airport_eham_18l_36r_aalsmeerbaan` | 18L/36R | Aalsmeerbaan |
 | `sensor.schiphol_airport_eham_18r_36l_polderbaan` | 18R/36L | Polderbaan |
-| `sensor.schiphol_airport_eham_04_22_buitenveldertbaan` | 04/22 | Buitenveldertbaan |
+| `sensor.schiphol_airport_eham_04_22_oostbaan` | 04/22 | Oostbaan |
+
+> **Upgrading from v1.6.x or earlier:** older versions had the names of 09/27 and 04/22 swapped. After updating, the friendly names are corrected, but Home Assistant keeps your existing entity IDs (`..._09_27_oostbaan` is still runway 09/27, `..._04_22_buitenveldertbaan` is still 04/22), so automations keep working. To get matching IDs, rename them under **Settings → Entities**.
 
 #### States
 
@@ -218,8 +220,8 @@ automation:
       - platform: state
         entity_id:
           - sensor.schiphol_airport_eham_18l_36r_aalsmeerbaan
-          - sensor.schiphol_airport_eham_04_22_buitenveldertbaan
-          - sensor.schiphol_airport_eham_09_27_oostbaan
+          - sensor.schiphol_airport_eham_04_22_oostbaan
+          - sensor.schiphol_airport_eham_09_27_buitenveldertbaan
         from: "not_in_use"
     action:
       - service: notify.mobile_app_your_phone
@@ -244,8 +246,8 @@ Schiphol has six runways. Which are active depends on wind, traffic volume, nois
 | 06/24 | Kaagbaan | Preferred secondary; NE-SW diagonal |
 | 18C/36C | Zwanenburgbaan | Central N-S runway |
 | 18L/36R | Aalsmeerbaan | SW of the airport |
-| 04/22 | Buitenveldertbaan | Short runway; SE, used mainly during peaks |
-| 09/27 | Oostbaan | Shortest; used selectively, mainly GA |
+| 09/27 | Buitenveldertbaan | E-W runway; used mainly during peaks |
+| 04/22 | Oostbaan | Shortest; used selectively, mainly GA |
 
 Quiet periods: 1 landing + 1 departure runway. Inbound peaks: 2 landing + 1 departure. Outbound peaks: 1 landing + 2 departure. Overlapping peaks: up to 2 + 2.
 

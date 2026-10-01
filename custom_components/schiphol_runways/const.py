@@ -19,9 +19,9 @@ STATE_NO_PEAK       = "no_peak"
 # "bearing" is the magnetic bearing of the lower-number end (for SVG drawing).
 RUNWAYS: dict[str, dict] = {
     "06/24":   {"name": "Kaagbaan",         "headings": ["06", "24"],             "bearing": 58},
-    "09/27":   {"name": "Oostbaan",          "headings": ["09", "27"],             "bearing": 87},
+    "09/27":   {"name": "Buitenveldertbaan", "headings": ["09", "27"],             "bearing": 87},
     "18C/36C": {"name": "Zwanenburgbaan",    "headings": ["18C", "36C", "18", "36"], "bearing": 183},
     "18L/36R": {"name": "Aalsmeerbaan",      "headings": ["18L", "36R"],           "bearing": 183},
     "18R/36L": {"name": "Polderbaan",        "headings": ["18R", "36L"],           "bearing": 183},
-    "04/22":   {"name": "Buitenveldertbaan", "headings": ["04", "22"],             "bearing": 41},
+    "04/22":   {"name": "Oostbaan",          "headings": ["04", "22"],             "bearing": 41},
 }
